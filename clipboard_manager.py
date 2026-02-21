@@ -1,110 +1,170 @@
 import tkinter as tk
-from tkinter import messagebox
+from tkinter import ttk, messagebox
 import pyperclip
 import threading
 import time
+import os
+import json
+from PIL import Image, ImageDraw
+import pystray
 
-# قائمة لتخزين النصوص المنسوخة
+# --- إعدادات البرنامج ---
+# مسار حفظ ملف السجل في مجلد بيانات التطبيق الخاص بالمستخدم
+APP_DATA_DIR = os.path.join(os.getenv('APPDATA'), 'ClipboardManager')
+HISTORY_FILE = os.path.join(APP_DATA_DIR, 'history.json')
+MAX_HISTORY_ITEMS = 100  # تحديد أقصى عدد للعناصر في السجل
+
+# --- المتغيرات العامة ---
 clipboard_history = []
-# متغير لتتبع آخر نص منسوخ لتجنب التكرار
 last_copied_item = ""
 
-def monitor_clipboard():
-    """
-    تعمل هذه الدالة في الخلفية لمراقبة الحافظة باستمرار.
-    """
-    global last_copied_item, clipboard_history
+# --- دوال إدارة السجل (الحفظ والتحميل) ---
+def setup_storage():
+    """إنشاء مجلد التخزين إذا لم يكن موجودًا."""
+    if not os.path.exists(APP_DATA_DIR):
+        os.makedirs(APP_DATA_DIR)
 
+def load_history():
+    """تحميل السجل من الملف عند بدء التشغيل."""
+    global clipboard_history
+    if os.path.exists(HISTORY_FILE):
+        try:
+            with open(HISTORY_FILE, 'r', encoding='utf-8') as f:
+                clipboard_history = json.load(f)
+        except (json.JSONDecodeError, IOError):
+            clipboard_history = []
+    else:
+        clipboard_history = []
+
+def save_history():
+    """حفظ السجل الحالي إلى الملف."""
+    with open(HISTORY_FILE, 'w', encoding='utf-8') as f:
+        json.dump(clipboard_history, f, ensure_ascii=False, indent=4)
+
+# --- دوال البرنامج الأساسية ---
+def monitor_clipboard():
+    """تراقب الحافظة وتضيف العناصر الجديدة."""
+    global last_copied_item
     while True:
         try:
-            # جلب المحتوى الحالي للحافظة
             current_item = pyperclip.paste()
-
-            # التأكد من أن المحتوى جديد وليس فارغاً
             if current_item and current_item != last_copied_item:
                 last_copied_item = current_item
-                # التأكد من عدم وجود العنصر مسبقاً في القائمة
                 if current_item not in clipboard_history:
-                    # إضافة العنصر الجديد إلى بداية القائمة
                     clipboard_history.insert(0, current_item)
-                    # تحديث القائمة في الواجهة الرسومية
-                    update_history_listbox()
+                    # الحفاظ على حجم السجل ضمن الحد الأقصى
+                    if len(clipboard_history) > MAX_HISTORY_ITEMS:
+                        clipboard_history.pop()
+                    save_history()
+                    # استخدام after لتحديث الواجهة من الخيط الرئيسي
+                    root.after(100, update_history_listbox)
         except pyperclip.PyperclipException:
-            # تجاهل المحتويات التي ليست نصاً (مثل الصور)
             pass
-        
-        # الانتظار لمدة ثانية واحدة قبل التحقق مرة أخرى
         time.sleep(1)
 
 def update_history_listbox():
-    """
-    تقوم هذه الدالة بتحديث القائمة الظاهرة في واجهة البرنامج.
-    """
-    # مسح القائمة الحالية
+    """تحديث قائمة العرض في الواجهة."""
     history_listbox.delete(0, tk.END)
-    # إعادة تعبئة القائمة من سجل الحافظة
     for item in clipboard_history:
-        # عرض أول 75 حرفاً فقط من كل عنصر لتسهيل القراءة
-        display_item = (item[:75] + '...') if len(item) > 75 else item
+        display_item = (item[:100] + '...') if len(item) > 100 else item
         history_listbox.insert(tk.END, display_item.replace('\n', ' '))
 
 def on_item_select(event):
-    """
-    يتم استدعاء هذه الدالة عند اختيار عنصر من القائمة.
-    تقوم بنسخ العنصر المختار مرة أخرى إلى الحافظة.
-    """
-    # الحصول على العناصر المحددة
+    """نسخ العنصر المحدد إلى الحافظة."""
     selected_indices = history_listbox.curselection()
     if selected_indices:
-        # الحصول على فهرس العنصر المحدد
-        index = selected_indices[0]
-        # جلب النص الكامل للعنصر من السجل (وليس النص المقتطع)
-        item_to_copy = clipboard_history[index]
-        # نسخه إلى الحافظة
+        item_to_copy = clipboard_history[selected_indices[0]]
         pyperclip.copy(item_to_copy)
-        # إظهار رسالة تأكيد في شريط الحالة
-        status_label.config(text=f"تم نسخ: { (item_to_copy[:40] + '...') if len(item_to_copy) > 40 else item_to_copy }")
+        status_label.config(text=f"تم نسخ العنصر المحدد!")
 
-def on_closing():
-    """
-    دالة للتأكيد قبل إغلاق البرنامج.
-    """
-    if messagebox.askokcancel("إغلاق", "هل تريد بالتأكيد إغلاق مدير الحافظة؟"):
-        root.destroy()
+def clear_history():
+    """مسح سجل الحافظة."""
+    if messagebox.askyesno("مسح السجل", "هل أنت متأكد أنك تريد مسح كل سجل الحافظة؟ لا يمكن التراجع عن هذا الإجراء."):
+        global clipboard_history
+        clipboard_history = []
+        save_history()
+        update_history_listbox()
+        status_label.config(text="تم مسح السجل.")
+
+# --- دوال إدارة واجهة الخلفية (System Tray) ---
+def create_image():
+    """إنشاء أيقونة بسيطة للبرنامج."""
+    # يمكنك استبدال هذا بأيقونة من ملف 'icon.png'
+    try:
+        return Image.open("icon.ico")
+    except FileNotFoundError:
+        image = Image.new('RGB', (64, 64), 'gray')
+        dc = ImageDraw.Draw(image)
+        dc.rectangle((16, 16, 48, 48), fill='white')
+        return image
+
+
+def show_window(icon, item):
+    """إظهار نافذة البرنامج الرئيسية."""
+    icon.stop()
+    root.after(0, root.deiconify)
+
+def quit_app(icon, item):
+    """إغلاق البرنامج بالكامل."""
+    icon.stop()
+    root.destroy()
+
+def hide_window():
+    """إخفاء النافذة وتشغيل أيقونة الخلفية."""
+    root.withdraw()
+    image = create_image()
+    menu = (pystray.MenuItem('إظهار', show_window, default=True), pystray.MenuItem('خروج', quit_app))
+    icon = pystray.Icon("clipboard_manager", image, "مدير الحافظة", menu)
+    icon.run()
 
 # --- إعداد الواجهة الرسومية ---
 if __name__ == "__main__":
+    setup_storage()
+    load_history()
+
     root = tk.Tk()
-    root.title("مدير الحافظة")
-    root.geometry("600x400")
+    root.title("مدير الحافظة الاحترافي")
+    root.geometry("700x500")
+    root.protocol("WM_DELETE_WINDOW", hide_window)
 
-    title_label = tk.Label(root, text="سجل الحافظة", font=("Helvetica", 16))
-    title_label.pack(pady=10)
+    # استخدام থিমات لتحسين المظهر
+    style = ttk.Style(root)
+    style.theme_use("clam") # يمكنك تجربة "alt", "default", "classic", "clam"
 
-    # إطار يحتوي على القائمة وشريط التمرير
-    frame = tk.Frame(root)
-    scrollbar = tk.Scrollbar(frame, orient=tk.VERTICAL)
-    history_listbox = tk.Listbox(frame, yscrollcommand=scrollbar.set, selectmode=tk.SINGLE, font=("Helvetica", 12))
+    # الإطار الرئيسي
+    main_frame = ttk.Frame(root, padding="10")
+    main_frame.pack(fill=tk.BOTH, expand=True)
+
+    # عنوان
+    title_label = ttk.Label(main_frame, text="سجل الحافظة", font=("Segoe UI", 16, "bold"))
+    title_label.pack(pady=(0, 10))
+
+    # إطار القائمة مع شريط التمرير
+    list_frame = ttk.Frame(main_frame)
+    list_frame.pack(fill=tk.BOTH, expand=True)
     
+    scrollbar = ttk.Scrollbar(list_frame, orient=tk.VERTICAL)
+    history_listbox = tk.Listbox(list_frame, yscrollcommand=scrollbar.set, selectmode=tk.SINGLE, 
+                                 font=("Segoe UI", 11), borderwidth=0, highlightthickness=0)
     scrollbar.config(command=history_listbox.yview)
+    
     scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
     history_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-    frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
 
-    # ربط حدث تحديد عنصر بالدالة on_item_select
     history_listbox.bind("<<ListboxSelect>>", on_item_select)
+    update_history_listbox()
+    
+    # زر مسح السجل
+    clear_button = ttk.Button(main_frame, text="مسح السجل", command=clear_history)
+    clear_button.pack(pady=10)
 
-    # شريط الحالة في الأسفل
-    status_label = tk.Label(root, text="اختر عنصراً من القائمة لنسخه.", bd=1, relief=tk.SUNKEN, anchor=tk.W)
+    # شريط الحالة
+    status_label = ttk.Label(root, text="جاهز - اختر عنصراً لنسخه أو أغلق النافذة للعمل في الخلفية.", 
+                             relief=tk.SUNKEN, anchor=tk.W, padding=5)
     status_label.pack(side=tk.BOTTOM, fill=tk.X)
 
-    # بدء تشغيل مراقب الحافظة في الخلفية
+    # بدء مراقب الحافظة
     monitor_thread = threading.Thread(target=monitor_clipboard, daemon=True)
     monitor_thread.start()
 
-    # التأكيد عند الإغلاق
-    root.protocol("WM_DELETE_WINDOW", on_closing)
-
-    # بدء تشغيل الواجهة الرسومية
     root.mainloop()
-
