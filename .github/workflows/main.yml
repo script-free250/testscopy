@@ -21,15 +21,16 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        # --- إضافة المكتبات الجديدة هنا ---
-        pip install pyinstaller pyperclip pystray Pillow ttkthemes pywin32
+        # --- تحديث قائمة المكتبات ---
+        pip install pyinstaller pyperclip pystray Pillow ttkbootstrap pywin32
 
     - name: Build with PyInstaller
       run: |
-        pyinstaller --name clipboard_manager --onefile --noconsole --add-data "icon.ico;." clipboard_manager.py
+        # --name: تغيير اسم الملف التنفيذي
+        pyinstaller --name ClipboardManagerPro --onefile --noconsole --add-data "icon.ico;." clipboard_manager.py
 
     - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
         name: clipboard-manager-windows-executable
-        path: dist/clipboard_manager.exe
+        path: dist/ClipboardManagerPro.exe
