@@ -1,217 +1,190 @@
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import messagebox
+import ttkbootstrap as ttk
 import pyperclip
 import threading
 import time
 import os
 import json
 import sys
+import queue
 from PIL import Image, ImageDraw
-import pystray
-from ttkthemes import ThemedTk
 
-# --- مكتبات خاصة بالويندوز للتشغيل التلقائي ---
 try:
     import win32com.client
 except ImportError:
-    messagebox.showerror("خطأ في المكتبات", "مكتبة pywin32 غير مثبتة. لا يمكن تفعيل خاصية التشغيل مع الويندوز.")
-    sys.exit(1)
+    # هذا سيسمح للبرنامج بالعمل على أنظمة غير ويندوز ولكن بدون ميزة التشغيل التلقائي
+    win32com = None
 
-
-# --- إعدادات البرنامج ---
-APP_DATA_DIR = os.path.join(os.getenv('APPDATA'), 'ClipboardManager')
+# --- إعدادات البرنامج وثوابته ---
+APP_DATA_DIR = os.path.join(os.getenv('APPDATA'), 'ClipboardManagerPro')
 HISTORY_FILE = os.path.join(APP_DATA_DIR, 'history.json')
-SETTINGS_FILE = os.path.join(APP_DATA_DIR, 'settings.json') # ملف لحفظ الإعدادات
+SETTINGS_FILE = os.path.join(APP_DATA_DIR, 'settings.json')
 MAX_HISTORY_ITEMS = 200
+MAX_TEXT_SIZE = 1024 * 1024  # 1 MB حد أقصى لحجم النص
+UPDATE_INTERVAL_MS = 150 # سرعة تحديث الواجهة
 
-# --- المتغيرات العامة ---
+# --- متغيرات عامة وطابور التواصل ---
 clipboard_history = []
-settings = {'autostart': False} # إعدادات افتراضية
+settings = {'autostart': False}
+clipboard_queue = queue.Queue() # طابور آمن للتواصل بين الخيوط
 
-
-# --- دوال إدارة الملفات (السجل والإعدادات) ---
+# --- دوال إدارة الملفات (حفظ وتحميل) ---
 def setup_storage():
-    if not os.path.exists(APP_DATA_DIR):
-        os.makedirs(APP_DATA_DIR)
+    if not os.path.exists(APP_DATA_DIR): os.makedirs(APP_DATA_DIR)
 
 def load_data():
-    """تحميل السجل والإعدادات عند بدء التشغيل."""
     global clipboard_history, settings
-    # تحميل السجل
-    if os.path.exists(HISTORY_FILE):
-        try:
-            with open(HISTORY_FILE, 'r', encoding='utf-8') as f:
-                clipboard_history = json.load(f)
-        except (json.JSONDecodeError, IOError):
-            clipboard_history = []
-    # تحميل الإعدادات
-    if os.path.exists(SETTINGS_FILE):
-        try:
-            with open(SETTINGS_FILE, 'r', encoding='utf-8') as f:
-                settings = json.load(f)
-        except (json.JSONDecodeError, IOError):
-            settings = {'autostart': False}
+    try:
+        if os.path.exists(HISTORY_FILE):
+            with open(HISTORY_FILE, 'r', encoding='utf-8') as f: clipboard_history = json.load(f)
+        if os.path.exists(SETTINGS_FILE):
+            with open(SETTINGS_FILE, 'r', encoding='utf-8') as f: settings = json.load(f)
+    except (json.JSONDecodeError, IOError):
+        clipboard_history, settings = [], {'autostart': False}
 
-def save_history():
-    with open(HISTORY_FILE, 'w', encoding='utf-8') as f:
-        json.dump(clipboard_history, f, ensure_ascii=False, indent=4)
+def save_data_on_exit():
+    """حفظ كل البيانات مرة واحدة عند الخروج."""
+    with open(HISTORY_FILE, 'w', encoding='utf-8') as f: json.dump(clipboard_history, f, ensure_ascii=False, indent=4)
+    with open(SETTINGS_FILE, 'w', encoding='utf-8') as f: json.dump(settings, f, indent=4)
 
-def save_settings():
-    with open(SETTINGS_FILE, 'w', encoding='utf-8') as f:
-        json.dump(settings, f, indent=4)
-
-
-# --- دالة التشغيل التلقائي مع الويندوز ---
-def toggle_autostart():
-    """إنشاء أو حذف اختصار البرنامج في مجلد بدء التشغيل."""
-    settings['autostart'] = autostart_var.get()
-    save_settings()
-    
-    startup_folder = os.path.join(os.getenv('APPDATA'), 'Microsoft', 'Windows', 'Start Menu', 'Programs', 'Startup')
-    shortcut_path = os.path.join(startup_folder, "ClipboardManager.lnk")
-    
-    if settings['autostart']:
-        try:
-            shell = win32com.client.Dispatch("WScript.Shell")
-            shortcut = shell.CreateShortCut(shortcut_path)
-            shortcut.Targetpath = sys.executable # مسار الملف التنفيذي الحالي
-            shortcut.WorkingDirectory = os.path.dirname(sys.executable)
-            shortcut.IconLocation = sys.executable
-            shortcut.save()
-            status_label.config(text="تم تفعيل التشغيل التلقائي مع الويندوز.")
-        except Exception as e:
-            status_label.config(text=f"خطأ: لم يتم تفعيل التشغيل التلقائي.")
-    else:
-        if os.path.exists(shortcut_path):
-            os.remove(shortcut_path)
-            status_label.config(text="تم إلغاء تفعيل التشغيل التلقائي.")
-
-# --- دوال البرنامج الأساسية ---
+# --- دوال البرنامج والمنطق ---
 def monitor_clipboard():
-    # ... (نفس الكود السابق بدون تغيير)
-    global last_copied_item
+    """تراقب الحافظة وتضع العناصر الجديدة في الطابور (Queue)."""
+    last_item = ""
     while True:
         try:
             current_item = pyperclip.paste()
-            if current_item and current_item != last_copied_item:
-                last_copied_item = current_item
-                if current_item not in clipboard_history:
-                    clipboard_history.insert(0, current_item)
-                    if len(clipboard_history) > MAX_HISTORY_ITEMS:
-                        clipboard_history.pop()
-                    save_history()
-                    root.after(100, update_history_listbox)
-        except pyperclip.PyperclipException:
-            pass
-        time.sleep(1)
+            if current_item and current_item != last_item:
+                last_item = current_item
+                # التحقق من حجم النص قبل إضافته
+                if sys.getsizeof(current_item) <= MAX_TEXT_SIZE:
+                    clipboard_queue.put(current_item)
+        except (pyperclip.PyperclipException, TypeError):
+            pass # تجاهل المحتوى غير النصي
+        time.sleep(0.8) # تقليل التكرار قليلاً
 
-
-def update_history_listbox():
-    # ... (نفس الكود السابق بدون تغيير)
-    history_listbox.delete(0, tk.END)
-    for item in clipboard_history:
-        display_item = (item[:100] + '...') if len(item) > 100 else item
-        history_listbox.insert(tk.END, display_item.replace('\n', ' '))
-
+def process_queue():
+    """تفحص الطابور وتحدث الواجهة الرئيسية."""
+    try:
+        while not clipboard_queue.empty():
+            item = clipboard_queue.get_nowait()
+            if item not in clipboard_history:
+                clipboard_history.insert(0, item)
+                if len(clipboard_history) > MAX_HISTORY_ITEMS: clipboard_history.pop()
+                
+                display_item = (item[:120] + '...') if len(item) > 120 else item
+                history_listbox.insert(0, display_item.replace('\n', ' '))
+    finally:
+        root.after(UPDATE_INTERVAL_MS, process_queue) # إعادة جدولة الفحص
 
 def on_item_select(event):
-    # ... (نفس الكود السابق بدون تغيير)
-    selected_indices = history_listbox.curselection()
-    if selected_indices:
-        item_to_copy = clipboard_history[selected_indices[0]]
-        pyperclip.copy(item_to_copy)
-        status_label.config(text=f"تم نسخ العنصر المحدد!")
-
+    if not history_listbox.curselection(): return
+    index = history_listbox.curselection()[0]
+    pyperclip.copy(clipboard_history[index])
+    status_label.config(text="✓ تم نسخ العنصر المحدد")
 
 def clear_history():
-    # ... (نفس الكود السابق بدون تغيير)
-    if messagebox.askyesno("مسح السجل", "هل أنت متأكد أنك تريد مسح كل سجل الحافظة؟"):
-        global clipboard_history
-        clipboard_history = []
-        save_history()
-        update_history_listbox()
+    if messagebox.askyesno("مسح السجل", "هل أنت متأكد أنك تريد مسح كل السجل؟", icon='warning'):
+        clipboard_history.clear()
+        history_listbox.delete(0, tk.END)
         status_label.config(text="تم مسح السجل.")
 
+# --- دوال التشغيل التلقائي وواجهة الخلفية ---
+def toggle_autostart():
+    if not win32com:
+        messagebox.showerror("خطأ", "هذه الميزة مدعومة على نظام ويندوز فقط.")
+        autostart_var.set(False)
+        return
 
-# --- دوال واجهة الخلفية (System Tray) ---
-# ... (نفس الكود السابق بدون تغيير)
-def create_image():
+    settings['autostart'] = autostart_var.get()
+    startup_folder = os.path.join(os.getenv('APPDATA'), 'Microsoft', 'Windows', 'Start Menu', 'Programs', 'Startup')
+    shortcut_path = os.path.join(startup_folder, "ClipboardManagerPro.lnk")
+    
+    try:
+        if settings['autostart']:
+            shell = win32com.client.Dispatch("WScript.Shell")
+            shortcut = shell.CreateShortCut(shortcut_path)
+            shortcut.Targetpath, shortcut.WorkingDirectory = sys.executable, os.path.dirname(sys.executable)
+            shortcut.IconLocation = sys.executable
+            shortcut.save()
+            status_label.config(text="تم تفعيل التشغيل التلقائي.")
+        elif os.path.exists(shortcut_path):
+            os.remove(shortcut_path)
+            status_label.config(text="تم إلغاء تفعيل التشغيل التلقائي.")
+    except Exception:
+        status_label.config(text="خطأ في إعداد التشغيل التلقائي.")
+
+def create_tray_icon():
     try: return Image.open("icon.ico")
     except FileNotFoundError:
-        image = Image.new('RGB', (64, 64), '#333333'); dc = ImageDraw.Draw(image)
-        dc.rectangle((16, 16, 48, 48), fill='white'); return image
-def show_window(icon, item): icon.stop(); root.after(0, root.deiconify)
-def quit_app(icon, item): icon.stop(); root.destroy()
+        img = Image.new('RGB', (64, 64), '#1c1c1c'); dc = ImageDraw.Draw(img)
+        dc.rectangle((18, 18, 46, 46), fill='#00bc8c'); return img
+
+def show_window(icon, item): icon.stop(); root.deiconify()
+def quit_app(icon, item):
+    status_label.config(text="جاري الحفظ... لا تغلق.")
+    root.update()
+    save_data_on_exit() # حفظ كل شيء قبل الخروج
+    icon.stop(); root.destroy()
+
 def hide_window():
-    root.withdraw(); image = create_image()
+    root.withdraw()
     menu = (pystray.MenuItem('إظهار', show_window, default=True), pystray.MenuItem('خروج', quit_app))
-    icon = pystray.Icon("clipboard_manager", image, "مدير الحافظة", menu); icon.run()
+    icon = pystray.Icon("ClipboardManagerPro", create_tray_icon(), "مدير الحافظة الاحترافي", menu); icon.run()
 
-
-# --- إعداد الواجهة الرسومية ---
+# --- بناء الواجهة الرسومية ---
 if __name__ == "__main__":
     setup_storage()
     load_data()
 
-    # --- استخدام ThemedTk لتطبيق الثيم الداكن ---
-    root = ThemedTk(theme="equilux")
-    root.title("مدير الحافظة")
-    root.geometry("750x550")
+    root = ttk.Window(themename="darkly")
+    root.title("مدير الحافظة الاحترافي")
+    root.geometry("800x600")
     root.protocol("WM_DELETE_WINDOW", hide_window)
-    
-    # --- تحديد ألوان مخصصة للثيم الداكن ---
-    dark_bg = "#2b2b2b"
-    light_fg = "#d3d3d3"
-    select_bg = "#4a4a4a"
 
-    root.configure(bg=dark_bg)
-    style = ttk.Style(root)
-    style.configure("TLabel", background=dark_bg, foreground=light_fg, font=("Segoe UI", 10))
-    style.configure("TButton", background="#3c3f41", foreground=light_fg, font=("Segoe UI", 10))
-    style.configure("TCheckbutton", background=dark_bg, foreground=light_fg, font=("Segoe UI", 10))
-    
-    # الإطار الرئيسي
-    main_frame = ttk.Frame(root, padding="10")
+    main_frame = ttk.Frame(root, padding="15")
     main_frame.pack(fill=tk.BOTH, expand=True)
 
-    title_label = ttk.Label(main_frame, text="سجل الحافظة", font=("Segoe UI", 18, "bold"))
-    title_label.pack(pady=(0, 15))
+    title_label = ttk.Label(main_frame, text="سجل الحافظة", font=("Segoe UI", 20, "bold"))
+    title_label.pack(pady=(0, 15), anchor="w")
 
-    # إطار القائمة
-    list_frame = ttk.Frame(main_frame)
+    list_frame = ttk.Frame(main_frame, style='Card.TFrame', padding=5)
     list_frame.pack(fill=tk.BOTH, expand=True)
-    
-    scrollbar = ttk.Scrollbar(list_frame, orient=tk.VERTICAL)
+    list_frame.columnconfigure(0, weight=1); list_frame.rowconfigure(0, weight=1)
+
+    scrollbar = ttk.Scrollbar(list_frame)
     history_listbox = tk.Listbox(list_frame, yscrollcommand=scrollbar.set, selectmode=tk.SINGLE, 
-                                 font=("Segoe UI", 12), bg="#3c3f41", fg=light_fg, 
-                                 selectbackground=select_bg, selectforeground="white",
-                                 borderwidth=0, highlightthickness=0)
+                                 font=("Segoe UI", 12), bg="#303030", fg="#d3d3d3",
+                                 selectbackground="#00bc8c", selectforeground="white",
+                                 borderwidth=0, highlightthickness=0, activestyle='none')
     scrollbar.config(command=history_listbox.yview)
-    scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-    history_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+    
+    history_listbox.grid(row=0, column=0, sticky="nsew")
+    scrollbar.grid(row=0, column=1, sticky="ns")
 
+    for item in clipboard_history:
+        display_item = (item[:120] + '...') if len(item) > 120 else item
+        history_listbox.insert(tk.END, display_item.replace('\n', ' '))
     history_listbox.bind("<<ListboxSelect>>", on_item_select)
-    update_history_listbox()
     
-    # إطار سفلي للأزرار والإعدادات
-    bottom_frame = ttk.Frame(main_frame)
-    bottom_frame.pack(fill=tk.X, pady=(15, 0))
-    
-    clear_button = ttk.Button(bottom_frame, text="مسح السجل", command=clear_history, width=15)
-    clear_button.pack(side=tk.LEFT, padx=(0, 10))
+    settings_frame = ttk.Labelframe(main_frame, text=" الإعدادات ", padding="10")
+    settings_frame.pack(fill=tk.X, pady=(15, 0))
 
-    # --- خيار التشغيل التلقائي ---
+    clear_button = ttk.Button(settings_frame, text="مسح السجل", command=clear_history, style="danger.TButton")
+    clear_button.pack(side=tk.RIGHT, padx=(10, 0))
+
     autostart_var = tk.BooleanVar(value=settings.get('autostart', False))
-    autostart_check = ttk.Checkbutton(bottom_frame, text="تشغيل مع بدء الويندوز", 
-                                      variable=autostart_var, command=toggle_autostart)
+    autostart_check = ttk.Checkbutton(settings_frame, text="تشغيل مع بدء الويندوز", variable=autostart_var, 
+                                      command=toggle_autostart, style="success.TCheckbutton")
     autostart_check.pack(side=tk.LEFT)
 
-    # شريط الحالة
-    status_label = ttk.Label(root, text="جاهز.", relief=tk.SUNKEN, anchor=tk.W, padding=5)
+    status_label = ttk.Label(root, text="جاهز.", style="secondary.TLabel", padding=5)
     status_label.pack(side=tk.BOTTOM, fill=tk.X)
 
     monitor_thread = threading.Thread(target=monitor_clipboard, daemon=True)
     monitor_thread.start()
+    
+    process_queue() # بدء فحص الطابور
 
     root.mainloop()
-
