@@ -1,5 +1,5 @@
 # .github/workflows/build.yml
-name: Build Python Application for Windows
+name: Build Professional Clipboard Manager for Windows
 
 on:
   push:
@@ -7,7 +7,6 @@ on:
 
 jobs:
   build:
-    # --- التغيير الأساسي هنا: استخدام بيئة ويندوز ---
     runs-on: windows-latest
 
     steps:
@@ -22,15 +21,17 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install pyinstaller pyperclip
+        # تثبيت كل المكتبات المطلوبة
+        pip install pyinstaller pyperclip pystray Pillow
 
     - name: Build with PyInstaller
       run: |
-        pyinstaller --name clipboard_manager --onefile clipboard_manager.py
+        # --noconsole: لإخفاء نافذة CMD
+        # --add-data "icon.ico;.": لدمج ملف الأيقونة مع البرنامج
+        pyinstaller --name clipboard_manager --onefile --noconsole --add-data "icon.ico;." clipboard_manager.py
 
     - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
         name: clipboard-manager-windows-executable
-        # --- تحديد المسار الصحيح للملف الناتج بامتداد .exe ---
         path: dist/clipboard_manager.exe
