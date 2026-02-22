@@ -20,7 +20,7 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
-        pip install pyinstaller  # <-- تثبيت أداة البناء
+        pip install pyinstaller
 
     - name: Run cookie extraction script
       run: python cookie_extractor.py
@@ -31,17 +31,20 @@ jobs:
         name: cookie-files
         path: cookies/
 
-    # --- هذا هو الجزء الجديد والمهم لبناء الملف التنفيذي ---
-    - name: Build the executable with PyInstaller
-      run: > # <-- السهم يسمح بكتابة الأمر على عدة أسطر
-        pyinstaller 
-        --onefile 
-        --clean 
-        --name MyCookieExtractor 
-        cookie_extractor.py  # <-- اسم الملف الصحيح هنا
+    # --- THE CORRECTED BUILD STEP ---
+    - name: Build the executable with hidden imports
+      run: |
+        pyinstaller --onefile --clean --name MyCookieExtractor ^
+        --hidden-import=browser_cookie3.chrome ^
+        --hidden-import=browser_cookie3.firefox ^
+        --hidden-import=browser_cookie3.edge ^
+        --hidden-import=browser_cookie3.opera ^
+        --hidden-import=browser_cookie3.brave ^
+        --hidden-import=browser_cookie3.vivaldi ^
+        cookie_extractor.py
 
     - name: Upload executable as artifact
       uses: actions/upload-artifact@v3
       with:
         name: executable-file
-        path: dist/MyCookieExtractor.exe # <-- مسار الملف التنفيذي
+        path: dist/MyCookieExtractor.exe
