@@ -1,36 +1,46 @@
 import browser_cookie3
 import os
 import sys
+import sqlite3
 
-def get_cookies():
+def get_and_save_cookies():
     """
-    يستخرج الكوكيز من جميع المتصفحات المدعومة ويحفظها في ملفات نصية
-    داخل مجلد 'cookies'
+    يستخرج الكوكيز بعد مطالبة المستخدم بإغلاق المتصفحات،
+    ويحفظ الملفات في نفس مجلد البرنامج.
     """
-    # إنشاء مجلد لتخزين الكوكيز إذا لم يكن موجودًا
-    if not os.path.exists('cookies'):
-        os.makedirs('cookies')
-
-    print("[-] جاري البحث عن الكوكيز في المتصفحات...")
-    
-    # قائمة لتتبع المواقع التي تم حفظ الكوكيز لها
-    saved_domains = set()
-
     try:
+        # ------------------ الخطوة الأهم ------------------
+        print("--------------------------------------------------")
+        print("[-] هام جدا: يرجى اغلاق جميع المتصفحات بالكامل الان")
+        print("[-] (Chrome, Firefox, Edge, Opera, etc.)")
+        input("[-] اضغط على مفتاح Enter بعد اغلاق المتصفحات للمتابعة...")
+        print("--------------------------------------------------\n")
+        # ----------------------------------------------------
+
+        print("[-] جاري البحث عن الكوكيز، يرجى الانتظار...")
+        
+        saved_domains = set()
+        
         # تحميل الكوكيز من جميع المتصفحات المدعومة
-        # firefox, chrome, chromium, brave, opera, edge
         cj = browser_cookie3.load()
 
-        for cookie in cj:
-            # تنظيف اسم النطاق ليكون اسم ملف صالح
-            domain_name = cookie.domain.lstrip('.')
-            # استبدال النقاط في اسم النطاق بشرطة سفلية لتجنب المشاكل
-            safe_filename = domain_name.replace('.', '_') + '.txt'
-            filepath = os.path.join('cookies', safe_filename)
+        if not cj:
+            print("\n[!] فشل: لم يتم العثور على أي كوكيز.")
+            print("[!] تاكد من أن المتصفحات كانت مغلقة تماما.")
+            print("[!] حاول تشغيل البرنامج 'كـ مسؤول' (Run as administrator).")
+            return
 
-            # كتابة الكوكيز في ملف خاص بالموقع
-            with open(filepath, 'a', encoding='utf-8') as f:
-                # كتابة معلومات الكوكي بتنسيق Netscape cookie file format
+        for cookie in cj:
+            domain_name = cookie.domain.lstrip('.')
+            # إنشاء اسم ملف واضح ومباشر في نفس المجلد
+            safe_filename = f"cookies_{domain_name.replace('.', '_')}.txt"
+            
+            # 'a' للكتابة والإضافة في نهاية الملف
+            with open(safe_filename, 'a', encoding='utf-8') as f:
+                # كتابة ترويسة الملف مرة واحدة فقط
+                if os.path.getsize(safe_filename) == 0:
+                    f.write(f"# Netscape Cookie File for {cookie.domain}\n\n")
+
                 f.write(
                     f"{cookie.domain}\t"
                     f"{'TRUE' if cookie.domain.startswith('.') else 'FALSE'}\t"
@@ -41,23 +51,32 @@ def get_cookies():
                     f"{cookie.value}\n"
                 )
             
-            if cookie.domain not in saved_domains:
-                saved_domains.add(cookie.domain)
+            saved_domains.add(cookie.domain)
 
         if saved_domains:
-            print(f"[+] تم العثور على وحفظ الكوكيز للمواقع التالية:")
+            print(f"\n[+] نجاح! تم العثور على وحفظ الكوكيز للمواقع التالية:")
             for domain in sorted(list(saved_domains)):
                 print(f"  - {domain}")
-            print(f"\n[+] تم حفظ جميع الملفات في مجلد 'cookies'")
+            print(f"\n[+] تم حفظ الملفات بنجاح في نفس مجلد البرنامج.")
         else:
-            print("[!] لم يتم العثور على أي كوكيز.")
+            # هذه الرسالة قد لا تظهر بسبب التحقق المسبق, لكنها للاحتياط
+            print("\n[!] لم يتم العثور على أي كوكيز بعد الفحص.")
 
+    except sqlite3.OperationalError as e:
+        if "database is locked" in str(e).lower():
+            print("\n[!] خطأ فادح: قاعدة بيانات احد المتصفحات مقفلة!")
+            print("[!] السبب: المتصفح لا يزال يعمل في الخلفية.")
+            print("[!] الحل: اغلق المتصفح بالكامل (يمكنك استخدام مدير المهام Task Manager للتاكد) ثم شغل البرنامج مجددا.")
+        else:
+            print(f"\n[!] حدث خطأ في قاعدة البيانات: {e}")
+            
     except Exception as e:
-        print(f"[!] حدث خطأ: {e}")
-        print("[!] قد تحتاج إلى تشغيل البرنامج بصلاحيات المسؤول أو إغلاق المتصفحات.")
+        print(f"\n[!] حدث خطأ غير متوقع: {e}")
+        print("[!] نصائح: تاكد من اغلاق المتصفحات او حاول تشغيل البرنامج 'كـ مسؤول'.")
 
 if __name__ == "__main__":
-    get_cookies()
-    # إبقاء نافذة الأوامر مفتوحة بعد التنفيذ لرؤية الناتج
-    if sys.platform == "win32":
-        os.system("pause")
+    get_and_save_cookies()
+    print("\n--------------------------------------------------")
+    print("[-] انتهت العملية. يمكنك اغلاق هذه النافذة.")
+    # هذا السطر يبقي النافذة مفتوحة حتى ترى الرسائل قبل أن تغلق
+    os.system("pause")
