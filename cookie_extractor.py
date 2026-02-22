@@ -4,38 +4,40 @@ import platform
 
 def get_cookies_and_save():
     """
-    يسحب الكوكيز من جميع المتصفحات المدعومة ويحفظها في ملفات
-    باسم الموقع المستخرج منه.
+    Extracts cookies from all supported browsers and saves them into files
+    named after the domain they were extracted from.
     """
-    # إنشاء مجلد لحفظ الكوكيز إذا لم يكن موجودًا
-    if not os.path.exists("cookies"):
-        os.makedirs("cookies")
+    # Create a directory to save cookies if it doesn't exist
+    output_directory = "cookies"
+    if not os.path.exists(output_directory):
+        os.makedirs(output_directory)
 
     try:
-        # تحميل الكوكيز من جميع المتصفحات
-        # قد يطلب منك إدخال كلمة مرور النظام على macOS
+        # Load cookies from all browsers.
+        # This might ask for the system password on macOS.
         cj = browser_cookie3.load()
 
         if not cj:
-            print("لم يتم العثور على أي كوكيز.")
+            print("No cookies were found.")
             return
 
-        # المرور على الكوكيز وحفظها
+        # Iterate over the cookies and save them
         for cookie in cj:
             domain = cookie.domain
-            # تنظيف اسم النطاق ليكون اسم ملف صالح
+            
+            # Clean the domain name to be a valid filename
             if domain.startswith("."):
                 domain = domain[1:]
             
-            # إزالة الأحرف غير الصالحة من اسم الملف
+            # Remove invalid characters from the filename
             filename = "".join(c for c in domain if c.isalnum() or c in ('-', '_')).strip()
             
             if not filename:
                 continue
 
-            filepath = os.path.join("cookies", f"{filename}.txt")
+            filepath = os.path.join(output_directory, f"{filename}.txt")
             
-            # كتابة بيانات الكوكي في الملف
+            # Append the cookie data to the file
             with open(filepath, "a", encoding="utf-8") as f:
                 f.write(f"Domain: {cookie.domain}\n")
                 f.write(f"Name: {cookie.name}\n")
@@ -45,14 +47,14 @@ def get_cookies_and_save():
                 f.write(f"Secure: {cookie.secure}\n")
                 f.write("-" * 20 + "\n\n")
         
-        print("تم حفظ الكوكيز بنجاح في مجلد 'cookies'.")
+        print(f"Successfully saved cookies to the '{output_directory}' folder.")
 
     except Exception as e:
-        print(f"حدث خطأ: {e}")
+        print(f"An error occurred: {e}")
         if platform.system() == "Linux":
-            print("على أنظمة لينكس، قد تحتاج بعض المتصفحات إلى keyring. يرجى التأكد من تثبيته.")
+            print("On Linux, some browsers may require 'keyring' to be installed.")
         elif platform.system() == "Darwin": # macOS
-             print("على نظام macOS، قد تحتاج إلى السماح بالوصول إلى Keychain.")
+             print("On macOS, you might need to grant access to the Keychain.")
 
 
 if __name__ == "__main__":
