@@ -1,12 +1,10 @@
 name: سحب الكوكيز
 
 on:
-  # يسمح لك بتشغيل هذا الـ workflow يدويًا من تبويب Actions
   workflow_dispatch:
 
 jobs:
   extract-cookies:
-    # مهم جدًا: يجب تشغيل هذا على self-hosted runner
     runs-on: self-hosted
 
     steps:
@@ -16,15 +14,15 @@ jobs:
     - name: إعداد بيئة Python
       uses: actions/setup-python@v4
       with:
-        python-version: '3.10' # يمكنك استخدام أي إصدار حديث
+        python-version: '3.10'
 
-    - name: تثبيت المكتبات المطلوبة
+    - name: تثبيت المكتبات من ملف requirements.txt
       run: |
         python -m pip install --upgrade pip
-        pip install browser_cookie3
+        pip install -r requirements.txt  # <-- هذا هو التعديل المهم
 
     - name: تشغيل سكربت سحب الكوكيز
-      run: python cookie_extractor.py # تأكد من أن اسم الملف صحيح
+      run: python cookie_extractor.py
 
     - name: رفع الكوكيز كـ artifact
       uses: actions/upload-artifact@v3
