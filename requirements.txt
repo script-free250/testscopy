@@ -1,1 +1,3 @@
-browser_cookie3
+rich
+pypiwin32
+pycryptodomex
