@@ -11,32 +11,25 @@ jobs:
     runs-on: windows-latest
 
     steps:
-    # --- تم التحديث هنا ---
-    - uses: actions/checkout@v4
-      # الخطوة 1: سحب الكود
+    - name: Checkout repository
+      uses: actions/checkout@v4
 
     - name: Set up Python
-      # --- تم التحديث هنا ---
       uses: actions/setup-python@v5
       with:
         python-version: '3.10'
-      # الخطوة 2: إعداد بيئة بايثون
 
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
         pip install pyinstaller
         pip install -r requirements.txt
-      # الخطوة 3: تثبيت المتطلبات
-
+        
     - name: Build executable
-      run: pyinstaller --onefile --noconsole cookie_extractor.py
-      # الخطوة 4: بناء الملف التنفيذي
+      run: pyinstaller --onefile --name "Cookie Extractor Pro" "cookie_extractor_pro.py"
 
     - name: Upload artifact
-      # --- تم التحديث هنا ---
       uses: actions/upload-artifact@v4
       with:
-        name: cookie-extractor-exe
-        path: dist/cookie_extractor.exe
-      # الخطوة 5: رفع الملف التنفيذي كـ "artifact"
+        name: cookie-extractor-pro-exe
+        path: dist/Cookie Extractor Pro.exe
