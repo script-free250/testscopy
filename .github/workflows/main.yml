@@ -1,35 +1,55 @@
-name: Build Python Executable
+# اسم سير العمل
+name: Build Python Application to EXE
 
+# التحكم في وقت تشغيل سير العمل
 on:
+  # التشغيل عند الدفع إلى الفرع الرئيسي (main)
   push:
     branches: [ "main" ]
-  pull_request:
-    branches: [ "main" ]
+  # يسمح بتشغيل هذا السير العمل يدويًا من علامة التبويب Actions
+  workflow_dispatch:
 
+# تحديد الوظائف التي سيتم تنفيذها
 jobs:
   build:
+    # نوع المشغل الذي ستعمل عليه الوظيفة
     runs-on: windows-latest
 
+    # سلسلة من المهام التي سيتم تنفيذها
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
+      # 1. سحب الكود من المستودع
+      # يستخدم action/checkout@v4 لسحب الكود الخاص بك
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.10'
+      # 2. إعداد بيئة Python
+      # يستخدم action/setup-python@v5 لتثبيت Python
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11' # يمكنك تحديد إصدار Python الذي تفضله
 
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install pyinstaller
-        pip install -r requirements.txt
-        
-    - name: Build executable
-      run: pyinstaller --onefile --name "Cookie Extractor Pro" "cookie_extractor_pro.py"
+      # 3. تثبيت الاعتماديات
+      # يقوم بتثبيت مكتبة PyInstaller اللازمة لبناء ملف EXE
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyinstaller
 
-    - name: Upload artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: cookie-extractor-pro-exe
-        path: dist/Cookie Extractor Pro.exe
+      # 4. بناء ملف EXE
+      # يقوم بتشغيل PyInstaller لبناء الملف التنفيذي
+      # --onefile: لإنشاء ملف تنفيذي واحد
+      # --windowed: لإخفاء نافذة الطرفية (console) عند تشغيل البرنامج
+      - name: Build executable
+        run: pyinstaller --onefile --windowed main.py
+
+      # 5. رفع الملف الناتج كقطعة أثرية (Artifact)
+      # يستخدم actions/upload-artifact@v4 لرفع الملف الناتج
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          # اسم القطعة الأثرية التي سيتم رفعها
+          name: CardManager-Executable
+          # المسار إلى الملف الذي سيتم رفعه
+          # يقوم PyInstaller بإنشاء الملف في مجلد dist
+          path: dist/main.exe
