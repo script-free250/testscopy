@@ -18,38 +18,36 @@ jobs:
     # سلسلة من المهام التي سيتم تنفيذها
     steps:
       # 1. سحب الكود من المستودع
-      # يستخدم action/checkout@v4 لسحب الكود الخاص بك
       - name: Checkout repository
         uses: actions/checkout@v4
 
       # 2. إعداد بيئة Python
-      # يستخدم action/setup-python@v5 لتثبيت Python
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11' # يمكنك تحديد إصدار Python الذي تفضله
 
       # 3. تثبيت الاعتماديات
-      # يقوم بتثبيت مكتبة PyInstaller اللازمة لبناء ملف EXE
+      # يقوم بتثبيت المكتبات اللازمة لبناء ملف EXE
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install pyinstaller
+          pip install ttkbootstrap # <-- إضافة المكتبة الجديدة هنا
 
       # 4. بناء ملف EXE
       # يقوم بتشغيل PyInstaller لبناء الملف التنفيذي
       # --onefile: لإنشاء ملف تنفيذي واحد
       # --windowed: لإخفاء نافذة الطرفية (console) عند تشغيل البرنامج
       - name: Build executable
-        run: pyinstaller --onefile --windowed main.py
+        run: pyinstaller --onefile --windowed --name CardManager main.py
 
       # 5. رفع الملف الناتج كقطعة أثرية (Artifact)
-      # يستخدم actions/upload-artifact@v4 لرفع الملف الناتج
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           # اسم القطعة الأثرية التي سيتم رفعها
           name: CardManager-Executable
           # المسار إلى الملف الذي سيتم رفعه
-          # يقوم PyInstaller بإنشاء الملف في مجلد dist
-          path: dist/main.exe
+          path: dist/CardManager.exe
+
