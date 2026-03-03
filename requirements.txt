@@ -1,3 +1,0 @@
-rich
-pypiwin32
-pycryptodomex
